@@ -1,10 +1,10 @@
 # NFL Receiving Stats Analysis (R)
 
-This project analyzes NFL receiving performance using data from pro football reference
+This project analyzes NFL receiving performance using data pulled from nflreadr
 
 ##Data
-- Source: Pro-Football-Reference
-- https://www.pro-football-reference.com/years/2024/receiving.htm
+- Source: nflreadr
+- Ho, T., & Carl, S. (2025). nflreadr: Download 'nflverse' Data (R package version 1.5.0.9000). https://github.com/nflverse/nflreadr
 - Season: 2024
 - Format: Excel
 
@@ -19,4 +19,4 @@ This project analyzes NFL receiving performance using data from pro football ref
 
 ## Tools
 - R
-- dplyr, ggplot2, readx1
+- nflread, dplyr, ggplot2, janitor, plotly

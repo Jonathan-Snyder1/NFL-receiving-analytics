@@ -1,10 +1,11 @@
 ############################################################
-# NFL Receiving (PBP-derived): WR-only YAC/Rec vs aDOT
-# - Color by season
-# - Label extreme YAC WRs
-# - Robust roster join (auto-detects ID column)
+# NFL Receiving (PBP-derived): WR-only Advanced Analytics
+# - YAC/Rec vs aDOT (interactive, colored by season, label extremes)
+# - Adds: target share, air yards share, YAC Over Expected (YACOE)
+# - New chart: YACOE vs Target Share (interactive)
 ############################################################
 
+# install.packages(c("nflreadr","dplyr","ggplot2","janitor","plotly","ggrepel"))
 library(nflreadr)
 library(dplyr)
 library(ggplot2)
@@ -28,7 +29,7 @@ recv_pbp <- pbp %>%
     !is.na(receiver_player_name)
   )
 
-# ---- Aggregate to player-season ----
+# ---- Aggregate to player-season totals ----
 receiving_total <- recv_pbp %>%
   group_by(season, receiver_player_id, receiver_player_name, posteam) %>%
   summarise(
@@ -37,44 +38,73 @@ receiving_total <- recv_pbp %>%
     yards = sum(receiving_yards, na.rm = TRUE),
     air = sum(air_yards, na.rm = TRUE),
     yac = sum(yards_after_catch, na.rm = TRUE),
+    touchdowns = sum(pass_touchdown == 1 & complete_pass == 1, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   filter(targets >= min_targets, receptions > 0) %>%
   mutate(
+    catch_rate = receptions / targets,
+    yards_per_target = yards / targets,
+    yards_per_rec = yards / receptions,
     adot = air / targets,
     yac_per_rec = yac / receptions
-  )
+  ) %>%
+  filter(!is.na(adot), !is.na(yac_per_rec))
 
-# ---- Load rosters ----
+# ---- Load rosters + WR filter (robust ID detection) ----
 rosters <- load_rosters(seasons) %>%
   clean_names()
 
-# ---- AUTO-detect the player ID column in rosters ----
 possible_id_cols <- c("player_id", "gsis_id", "gameday_player_id", "gsisp_id")
 roster_id_col <- intersect(possible_id_cols, colnames(rosters))[1]
+if (is.na(roster_id_col)) stop("No compatible player ID column found in rosters.")
 
-if (is.na(roster_id_col)) {
-  stop("No compatible player ID column found in rosters.")
-}
-
-# Keep only ID + position
 rosters_small <- rosters %>%
   select(all_of(roster_id_col), position)
 
-# ---- Join + WR filter ----
 receiving_wr <- receiving_total %>%
-  left_join(
-    rosters_small,
-    by = setNames(roster_id_col, "receiver_player_id")
-  ) %>%
+  left_join(rosters_small, by = setNames(roster_id_col, "receiver_player_id")) %>%
   filter(position == "WR")
 
-# ---- Extremes: highest YAC/Rec WRs ----
+# ==========================================================
+# ADVANCED METRICS
+# ==========================================================
+
+# ---- Target Share ----
+team_targets <- receiving_wr %>%
+  group_by(season, posteam) %>%
+  summarise(team_targets = sum(targets), .groups = "drop")
+
+receiving_wr <- receiving_wr %>%
+  left_join(team_targets, by = c("season", "posteam")) %>%
+  mutate(target_share = targets / team_targets)
+
+# ---- Air Yards Share ----
+team_air <- receiving_wr %>%
+  group_by(season, posteam) %>%
+  summarise(team_air_yards = sum(air), .groups = "drop")
+
+receiving_wr <- receiving_wr %>%
+  left_join(team_air, by = c("season", "posteam")) %>%
+  mutate(air_yards_share = air / team_air_yards)
+
+# ---- YAC Over Expected (YACOE) using a simple expected-YAC model from aDOT ----
+yac_model <- lm(yac_per_rec ~ adot, data = receiving_wr)
+
+receiving_wr <- receiving_wr %>%
+  mutate(
+    expected_yac = predict(yac_model, newdata = receiving_wr),
+    yac_over_expected = yac_per_rec - expected_yac
+  )
+
+# ==========================================================
+# CHART 1: WR-only YAC/Rec vs aDOT (interactive)
+# ==========================================================
+
 top_yac_wr <- receiving_wr %>%
   arrange(desc(yac_per_rec)) %>%
   slice_head(n = top_n_labels)
 
-# ---- Plot ----
 plot_yac_adot_wr <- ggplot(
   receiving_wr,
   aes(
@@ -86,9 +116,9 @@ plot_yac_adot_wr <- ggplot(
       "<br>Team:", posteam,
       "<br>Season:", season,
       "<br>Targets:", targets,
-      "<br>Receptions:", receptions,
       "<br>aDOT:", round(adot, 2),
-      "<br>YAC/Rec:", round(yac_per_rec, 2)
+      "<br>YAC/Rec:", round(yac_per_rec, 2),
+      "<br>Target Share:", round(100 * target_share, 1), "%"
     )
   )
 ) +
@@ -109,3 +139,39 @@ plot_yac_adot_wr <- ggplot(
   theme_minimal()
 
 ggplotly(plot_yac_adot_wr, tooltip = "text")
+
+# ==========================================================
+# CHART 2 (NEW): YACOE vs Target Share (interactive)
+# ==========================================================
+
+
+plot_yacoe_share <- ggplot(
+  receiving_wr,
+  aes(
+    x = target_share,
+    y = yac_over_expected,
+    color = factor(season),
+    text = paste(
+      "Player:", receiver_player_name,
+      "<br>Team:", posteam,
+      "<br>Season:", season,
+      "<br>Targets:", targets,
+      "<br>Target Share:", round(100 * target_share, 1), "%",
+      "<br>aDOT:", round(adot, 2),
+      "<br>YAC/Rec:", round(yac_per_rec, 2),
+      "<br>Exp YAC/Rec:", round(expected_yac, 2),
+      "<br>YACOE:", round(yac_over_expected, 2)
+    )
+  )
+) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(alpha = 0.75) +
+  labs(
+    title = "WR-only: YAC Over Expected (YACOE) vs Target Share",
+    x = "Target Share (Targets / Team Targets)",
+    y = "YAC Over Expected (YAC/Rec - Expected)",
+    color = "Season"
+  ) +
+  theme_minimal()
+
+ggplotly(plot_yacoe_share, tooltip = "text")

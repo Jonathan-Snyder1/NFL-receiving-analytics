@@ -1,24 +1,26 @@
 ############################################################
-# NFL Receiving (PBP-derived): YAC/Rec vs aDOT (Interactive)
+# NFL Receiving (PBP-derived): WR-only YAC/Rec vs aDOT
+# - Color by season
+# - Label extreme YAC WRs
+# - Robust roster join (auto-detects ID column)
 ############################################################
 
-# install.packages(c("nflreadr","dplyr","ggplot2","janitor","plotly"))
 library(nflreadr)
 library(dplyr)
 library(ggplot2)
 library(janitor)
 library(plotly)
+library(ggrepel)
 
 # ---- Settings ----
 seasons <- c(2023, 2024)
 min_targets <- 40
+top_n_labels <- 8
 
-# ---- Load play-by-play (this is bigger than player_stats) ----
+# ---- Load play-by-play ----
 pbp <- load_pbp(seasons) %>%
   clean_names()
 
-# Keep only completed or targeted pass plays with a receiver
-# (targets are pass attempts with a receiver; receptions are completions to that receiver)
 recv_pbp <- pbp %>%
   filter(
     play_type == "pass",
@@ -26,57 +28,84 @@ recv_pbp <- pbp %>%
     !is.na(receiver_player_name)
   )
 
-# ---- Aggregate to player-season totals ----
+# ---- Aggregate to player-season ----
 receiving_total <- recv_pbp %>%
   group_by(season, receiver_player_id, receiver_player_name, posteam) %>%
   summarise(
-    targets = n(),  # every targeted pass to that receiver
+    targets = n(),
     receptions = sum(complete_pass == 1, na.rm = TRUE),
     yards = sum(receiving_yards, na.rm = TRUE),
-    # air_yards and yac exist in pbp for most passes; use na.rm=TRUE
     air = sum(air_yards, na.rm = TRUE),
     yac = sum(yards_after_catch, na.rm = TRUE),
-    touchdowns = sum(pass_touchdown == 1 & complete_pass == 1, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  # Minimum volume + avoid divide-by-zero
   filter(targets >= min_targets, receptions > 0) %>%
   mutate(
     adot = air / targets,
     yac_per_rec = yac / receptions
   )
 
-# ---- Sanity checks (prints in console) ----
-cat("Rows:", nrow(receiving_total), "\n")
-cat("Any NA adot?:", sum(is.na(receiving_total$adot)), "\n")
-cat("Any NA yac_per_rec?:", sum(is.na(receiving_total$yac_per_rec)), "\n")
-print(head(receiving_total))
+# ---- Load rosters ----
+rosters <- load_rosters(seasons) %>%
+  clean_names()
 
-# ---- Plot: YAC per Reception vs aDOT (interactive hover) ----
-plot_yac_adot <- ggplot(
-  receiving_total,
+# ---- AUTO-detect the player ID column in rosters ----
+possible_id_cols <- c("player_id", "gsis_id", "gameday_player_id", "gsisp_id")
+roster_id_col <- intersect(possible_id_cols, colnames(rosters))[1]
+
+if (is.na(roster_id_col)) {
+  stop("No compatible player ID column found in rosters.")
+}
+
+# Keep only ID + position
+rosters_small <- rosters %>%
+  select(all_of(roster_id_col), position)
+
+# ---- Join + WR filter ----
+receiving_wr <- receiving_total %>%
+  left_join(
+    rosters_small,
+    by = setNames(roster_id_col, "receiver_player_id")
+  ) %>%
+  filter(position == "WR")
+
+# ---- Extremes: highest YAC/Rec WRs ----
+top_yac_wr <- receiving_wr %>%
+  arrange(desc(yac_per_rec)) %>%
+  slice_head(n = top_n_labels)
+
+# ---- Plot ----
+plot_yac_adot_wr <- ggplot(
+  receiving_wr,
   aes(
     x = adot,
     y = yac_per_rec,
+    color = factor(season),
     text = paste(
       "Player:", receiver_player_name,
       "<br>Team:", posteam,
       "<br>Season:", season,
       "<br>Targets:", targets,
       "<br>Receptions:", receptions,
-      "<br>Yards:", yards,
       "<br>aDOT:", round(adot, 2),
       "<br>YAC/Rec:", round(yac_per_rec, 2)
     )
   )
 ) +
-  geom_point(alpha = 0.7) +
+  geom_point(alpha = 0.75) +
   geom_smooth(method = "lm", se = FALSE) +
+  geom_text_repel(
+    data = top_yac_wr,
+    aes(label = receiver_player_name),
+    size = 3,
+    show.legend = FALSE
+  ) +
   labs(
-    title = "YAC per Reception vs aDOT (After-Catch Style vs Depth)",
+    title = "WR-only: YAC per Reception vs aDOT (After-Catch Style vs Depth)",
     x = "aDOT (Air Yards / Target)",
-    y = "YAC per Reception"
+    y = "YAC per Reception",
+    color = "Season"
   ) +
   theme_minimal()
 
-ggplotly(plot_yac_adot, tooltip = "text")
+ggplotly(plot_yac_adot_wr, tooltip = "text")

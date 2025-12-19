@@ -1,22 +1,42 @@
-# NFL Receiving Stats Analysis (R)
+# NFL WR Receiving Analysis (R)
 
-Using play-by-play data, I derived receiver-level metrics including aDOT, YAC per reception, target share, and air yards share. I estimated expected YAC from route depth and calculated YAC over expected (YACOE) to isolate after-catch skill. Clustering analysis reveals distinct receiver archetypes such as YAC specialists, deep threats, and high-volume WR1s.
+# 1. Project Overview:
+-This project analyzes NFL wide receiver performance using play by play data from 2023 through 2024 seasons (mainly stats like depth of target, yards after catch, etc) to derive advanced receiving metrics and identify receiver archetypes.
 
-##Data
-- Source: nflreadr
-- Ho, T., & Carl, S. (2025). nflreadr: Download 'nflverse' Data (R package version 1.5.0.9000). https://github.com/nflverse/nflreadr
-- Season: 2024
-- Format: Excel
+# 2. Data Source:
+   -Source: Data pulled from nflreadr
+   -Ho, T., & Carl, S. (2025). nflreadr: Download 'nflverse' Data (R package version 1.5.0.9000). https://github.com/nflverse/nflreadr
+   -Seasons: 2023-2024
+   -Oficial NFL PBP data
+   -Aggregated to player-season level
+   -RBs and TEs excluced (only wr)
 
-## Metrics
-- Catch Rate
-- Yards per target
-- Yards per game
+# 3. Data Processing and Feature
+   -Aggregation:
+     *pass plays filtered,
+     *player-season aggregation
+     *minimum target threshold
+   -Derived Metrics:
+     *Targets, receptions, yards
+     *Catch rate
+     *Yards per target
+     *aDOT (average depth of target)
+     *YAC per reception
+     *Target share
+     *Air yards share
 
-## Key insights
-- High volume receivers
-- Mid volume receivers
+# 4. Advanced Metrics
+  -YACOE (YAC over expected)
+    * Expected YAC modeled from aDOT
+    * Difference between actual and expected YAC
+    * Interpretation of positive vs negative values
+  -EAV Score (Effiency-Adjusted Volume)
+    * Composotie metric combining usage and effiency 
+    * Z-scored componenents
+    * Purpose: identify WRs who combine role + performance
 
-## Tools
-- R
-- nflread, dplyr, ggplot2, janitor, plotly
+  # 5. Receiver Archetype Modeling
+    -
+   
+
+

@@ -1,6 +1,6 @@
 # NFL Receiving Stats Analysis (R)
 
-This project analyzes NFL receiving performance using data pulled from nflreadr
+Using play-by-play data, I derived receiver-level metrics including aDOT, YAC per reception, target share, and air yards share. I estimated expected YAC from route depth and calculated YAC over expected (YACOE) to isolate after-catch skill. Clustering analysis reveals distinct receiver archetypes such as YAC specialists, deep threats, and high-volume WR1s.
 
 ##Data
 - Source: nflreadr
